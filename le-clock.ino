@@ -8,8 +8,6 @@
  // - Blinking colon
  // - user-friendly Adjust time and alarm 
 
-#include <Tone.h>
-
 // Numeric constants
 const char DIGITS   = 4;
 const char SEGMENTS = 7;
@@ -48,8 +46,6 @@ bool                alarm_playing    = false;
 unsigned long       button_interval  = 0;
 const long DAY_MS   = 1000L * 3600L * 24L;
 bool                debug_printed    = false;
-
-Tone tone1;
 
 const char MODES = 3;
 
@@ -133,7 +129,6 @@ void setup() {
 
   // Init buzzer and serial debugging
   pinMode(BUZZER_PIN, OUTPUT);
-  tone1.begin(BUZZER_PIN);
   Serial.begin(115200);
 }
 
@@ -212,10 +207,12 @@ void loop() {
     alarm_playing = true;
   else alarm_playing = false;
 
+  // Alarm beep for half of a second
   if (alarm_playing) {
-    tone1.play(NOTE_A5);
-  } else {
-    tone1.stop();
+    if (current_time % 1000 > 500)
+      tone(BUZZER_PIN, 1000); // Hz
+    else 
+      noTone(BUZZER_PIN);
   }
 
   // Always display time (non-blocking)
