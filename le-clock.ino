@@ -5,7 +5,6 @@
 */
 
 // TODO:
-// - Blinking colon
 // - user-friendly Adjust time and alarm
 
 // Numeric constants
@@ -193,8 +192,11 @@ void loop() {
     digitalWrite(DIGIT_PINS[digit_index], LOW);
 
     cycle_start = current_ms; // reset cycle start
+
+    // Blink colon
+    bool colon = (current_ms % 1000 > 500) ? HIGH : LOW;
+    digitalWrite(COLON_PIN, colon);
   }
 
-  // Always show colon for now
-  digitalWrite(COLON_PIN, HIGH);
+
 }
