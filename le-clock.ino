@@ -16,24 +16,28 @@ const int  CYCLE_LEN = 1; // digit refresh
 
 // Pin config
 const char DIGIT_PINS[DIGITS]   = {2, 3, 4, 5};
-const char SEG_PINS[SEGMENTS]   = {11, 10, 9, 8, 7, 13, 12};
+const char SEG_PINS[SEGMENTS]   = {11, 10, 9, 8, 7, 13, 12}; // ABCDEFG seg
 const char COLON_PIN            = 6;
 const char BUZZER_PIN           = A5;
 const char BUTTON_PINS[BUTTONS] = {A0, A1, A2};
 
 // Table of segments for each digit
 // Display is active high (1 = on)
-const bool DIGIT_SEG[10][7] = {{ 1, 1, 1, 1, 1, 1, 0 },
-  { 0, 1, 1, 0, 0, 0, 0 },
-  { 1, 1, 0, 1, 1, 0, 1 },
-  { 1, 1, 1, 1, 0, 0, 1 },
-  { 0, 1, 1, 0, 0, 1, 1 },
-  { 1, 0, 1, 1, 0, 1, 1 },
-  { 1, 0, 1, 1, 1, 1, 1 },
-  { 1, 1, 1, 0, 0, 0, 0 },
-  { 1, 1, 1, 1, 1, 1, 1 },
-  { 1, 1, 1, 1, 0, 1, 1 }
+// For fun: store segment bits as bits in a char 0b0GFEDCBA
+// saves some global variable memory compared to 2D bool array
+const char DIGIT_SEG[10] = {
+  0b0111111, // 0
+  0b0000110, // 1
+  0b1011011, // 2
+  0b1001111, // 3
+  0b1100110, // 4
+  0b1101101, // 5
+  0b1111101, // 6
+  0b0000111, // 7
+  0b1111111, // 8
+  0b1101111, // 9
 };
+
 
 // Globals for displaying time
 int                 digit_index      = 0; // 0-based for DIG1-DIG4
@@ -83,7 +87,7 @@ int calc_current_digit() {
 // Write digit segments to the whichever digit the 7seg is on atm
 void write_digit(int digit) {
   for (int i = 0; i < SEGMENTS; i++) {
-    digitalWrite(SEG_PINS[i], DIGIT_SEG[digit][i]);
+    digitalWrite(SEG_PINS[i], (DIGIT_SEG[digit] >> i) & 1);
   }
 }
 
