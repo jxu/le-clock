@@ -17,7 +17,7 @@ const int  CYCLE_LEN = 1; // digit refresh
 const char DIGIT_PINS[DIGITS]   = {2, 3, 4, 5};
 const char SEG_PINS[SEGMENTS]   = {11, 10, 9, 8, 7, 13, 12}; // ABCDEFG seg
 const char COLON_PIN            = 6;
-const char BUZZER_PIN           = A5;
+const char SPEAKER_PIN          = A5;
 const char BUTTON_PINS[BUTTONS] = {A0, A1, A2};
 
 // Table of segments for each digit
@@ -38,17 +38,18 @@ const char DIGIT_SEG[10] = {
 };
 
 
-// Globals for displaying time
+// Global variables
 int                 digit_index      = 0; // 0-based for DIG1-DIG4
-unsigned long       current_time     = 0;
+unsigned long       current_time     = 0; // ms time to convert into digits
 unsigned long       time_offset      = 0; // for adjusting display time
 unsigned long       alarm_time       = 6UL * 3600UL * 1000UL; // 06:00
 unsigned long       cycle_start;
+unsigned long       button_prev      = 0;
 bool                alarm_set        = true;
 bool                alarm_playing    = false;
-// TODO: remove or clean up this
-unsigned long       button_interval  = 0;
-const long DAY_MS                    = 1000L * 3600L * 24L;
+
+bool                pressed[BUTTONS];
+const long          DAY_MS           = 1000L * 3600L * 24L;
 bool                debug_printed    = false;
 
 const char MODES = 3;
@@ -59,11 +60,11 @@ enum Mode {
   MODE_SET_ALARM = 2,
 };
 
-Mode mode = MODE_DISPLAY;
+Mode mode = MODE_SET_TIME;
 
-// Calculate current digit from time
-int calc_current_digit() {
-  unsigned long current_time_sec = current_time / 1000;
+// Calculate current digit from given time
+int calc_current_digit(unsigned long t) {
+  unsigned long current_time_sec = t / 1000;
   int current_min = (current_time_sec / 60) % 60;
   int current_hr = (current_time_sec / 3600) % 24;
 
@@ -102,15 +103,22 @@ void setup() {
   // set first snapshot
   cycle_start = millis();
 
-  // Init buzzer and serial debugging
-  pinMode(BUZZER_PIN, OUTPUT);
+  // Init speaker and serial debugging
+  pinMode(SPEAKER_PIN, OUTPUT);
   Serial.begin(115200);
 }
 
 void loop() {
   // Every loop should call millis() only once to keep things in sync
+  // Overflows after about 50 days
+  // https://docs.arduino.cc/language-reference/en/functions/time/millis/
+  
   unsigned long current_ms = millis();
   current_time = current_ms + time_offset;
+
+  // adjust current_time within a day for alarm
+  if (current_time >= DAY_MS)
+    current_time -= DAY_MS; 
 
   // DEBUG monitoring, but only once per 1000 ms
 
@@ -126,54 +134,74 @@ void loop() {
     debug_printed = false;
   }
 
-  // Read button presses
+  // Read button presses every 50 ms for "debouncing"
 
-  for (int i = 0; i < BUTTONS; i++) {
-    // Debug
-    if ((millis() - button_interval > 300ul)) {
+  if (current_time - button_prev >= 50) {
+    for (int i = 0; i < BUTTONS; i++) {
+      // read active-low
+      if (digitalRead(BUTTON_PINS[i]) == LOW)
+      {
+        // new press, as prev time was inactive
+        if (pressed[i] == HIGH) {
+          Serial.print("b");
+          Serial.print(i);
 
+          switch (i) {
+            case 0: // mode button
+              mode = Mode((mode + 1) % MODES);
+              Serial.print("new mode ");
+              Serial.print(mode);
+              
+              break;
+            case 1:
+              if (mode == MODE_SET_TIME) {
+                // increment time by 1 hour
+                time_offset += 3600000UL;
+              }
+              break;
 
-      /*
-        if (dread) {
-        Serial.print("Button pressed: ");
-        Serial.println(i);
+            case 2:
+              if (mode == MODE_SET_TIME) {
+                // increment time by 1 min
+                time_offset += 60000UL;  
+              }
 
-        if (i == 0) {
-
-          if (mode == MODE_SET_TIME)
-            time_offset += 60000ul;
+              break;
+          }
+          
         }
-        else if (i == 1) {
-            if (mode == MODE_SET_TIME)
-              time_offset += 3600000ul;
-        }
-        else if (i == 2) {
-          mode = Mode((mode + 1) % MODES);
-          Serial.print("Mode ");
-          Serial.println(mode);
-        }
 
-        button_interval = millis();
-        }
-      */
+        
+        pressed[i] = LOW; // update button state
+      } else {
+        pressed[i] = HIGH;
+      }
     }
+
+    
+
+    button_prev = current_time;
   }
 
 
 
   // Set alarm_playing if we've just reached alarm time
   // For one minute
+
   if (alarm_set && 
-      (current_time > alarm_time && current_time < alarm_time + 60000UL))
+      (current_time > alarm_time && 
+       current_time < alarm_time + 60000UL))
     alarm_playing = true;
   else alarm_playing = false;
 
 
   if (alarm_playing) {
     if (current_time % 1000 > 500) // Alarm beep for half of a second
-      tone(BUZZER_PIN, 1000); // Hz
+      tone(SPEAKER_PIN, 1000); // Hz
     else
-      noTone(BUZZER_PIN);
+      noTone(SPEAKER_PIN);
+  } else {
+    noTone(SPEAKER_PIN);
   }
 
   // Cycle digit if enough time has passed
@@ -185,18 +213,22 @@ void loop() {
     // change to next digit
     digit_index = (digit_index + 1) % DIGITS;
 
-    int digit = calc_current_digit();
+    // HERE could change based on mode
+    int digit = calc_current_digit(current_time);
     write_digit(digit);
 
     // enable digit (active-low)
     digitalWrite(DIGIT_PINS[digit_index], LOW);
 
-    cycle_start = current_ms; // reset cycle start
 
-    // Blink colon
-    bool colon = (current_ms % 1000 > 500) ? HIGH : LOW;
-    digitalWrite(COLON_PIN, colon);
+    // Blink colon in display mode, otherwise leave on
+    if (mode == MODE_DISPLAY) {
+      bool colon = (current_ms % 1000 > 500) ? HIGH : LOW;
+      digitalWrite(COLON_PIN, colon);
+    } else {
+      digitalWrite(COLON_PIN, HIGH);
+    }
+
+    cycle_start = current_ms; // reset cycle
   }
-
-
 }
