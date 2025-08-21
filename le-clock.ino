@@ -1,11 +1,7 @@
 /*
    Alarm clock
    3 modes (display, setting time, setting alarm)
-   Goes off at 06:00 for a minute
 */
-
-// TODO:
-// - user-friendly Adjust time and alarm
 
 // Numeric constants
 const char DIGITS   = 4;
@@ -45,11 +41,11 @@ unsigned long       time_offset      = 0; // for adjusting display time
 unsigned long       alarm_time       = 6UL * 3600UL * 1000UL; // 06:00
 unsigned long       cycle_start;
 unsigned long       button_prev      = 0;
-bool                alarm_set        = true;
-bool                alarm_playing    = false;
 
 bool                pressed[BUTTONS];
-const long          DAY_MS           = 1000L * 3600L * 24L;
+const unsigned long MINUTE_MS        = 60 * 1000UL;
+const unsigned long HOUR_MS          = 60 * MINUTE_MS;
+const unsigned long DAY_MS           = 24 * HOUR_MS;
 bool                debug_printed    = false;
 
 const char MODES = 3;
@@ -71,13 +67,10 @@ int calc_current_digit(unsigned long t) {
   switch (digit_index) {
     case 0:
       return current_hr / 10;
-      
     case 1:
       return current_hr % 10;
-
     case 2:
       return current_min / 10;
-
     case 3:
     default:
       return current_min % 10;
@@ -116,10 +109,6 @@ void loop() {
   unsigned long current_ms = millis();
   current_time = current_ms + time_offset;
 
-  // adjust current_time within a day for alarm
-  if (current_time >= DAY_MS)
-    current_time -= DAY_MS; 
-
   // DEBUG monitoring, but only once per 1000 ms
 
   if (!debug_printed && (current_time % 1000 == 0)) {
@@ -156,46 +145,39 @@ void loop() {
             case 1:
               if (mode == MODE_SET_TIME) {
                 // increment time by 1 hour
-                time_offset += 3600000UL;
+                time_offset = (time_offset + HOUR_MS) % DAY_MS;
+              } 
+              if (mode == MODE_SET_ALARM) {
+                // increment alarm time by 1 hour
+                alarm_time = (alarm_time + HOUR_MS) % DAY_MS;
               }
               break;
 
             case 2:
               if (mode == MODE_SET_TIME) {
                 // increment time by 1 min
-                time_offset += 60000UL;  
+                time_offset = (time_offset + MINUTE_MS) % DAY_MS;  
               }
-
+              if (mode == MODE_SET_ALARM) {
+                // increment alarm time by 1 min
+                alarm_time = (alarm_time + MINUTE_MS) % DAY_MS;
+              }
               break;
           }
-          
         }
-
         
         pressed[i] = LOW; // update button state
       } else {
         pressed[i] = HIGH;
       }
     }
-
-    
-
     button_prev = current_time;
   }
 
-
-
   // Set alarm_playing if we've just reached alarm time
   // For one minute
-
-  if (alarm_set && 
-      (current_time > alarm_time && 
-       current_time < alarm_time + 60000UL))
-    alarm_playing = true;
-  else alarm_playing = false;
-
-
-  if (alarm_playing) {
+  if ((current_time > alarm_time && 
+       current_time < alarm_time + MINUTE_MS)) {
     if (current_time % 1000 > 500) // Alarm beep for half of a second
       tone(SPEAKER_PIN, 1000); // Hz
     else
@@ -203,6 +185,7 @@ void loop() {
   } else {
     noTone(SPEAKER_PIN);
   }
+
 
   // Cycle digit if enough time has passed
   if (current_ms - cycle_start >= CYCLE_LEN) {
@@ -213,8 +196,14 @@ void loop() {
     // change to next digit
     digit_index = (digit_index + 1) % DIGITS;
 
-    // HERE could change based on mode
-    int digit = calc_current_digit(current_time);
+    // Based on mode, either write current or alarm time
+    int digit;
+    if (mode == MODE_SET_ALARM) {
+      digit = calc_current_digit(alarm_time);
+    } else {
+      digit = calc_current_digit(current_time);
+    }
+    
     write_digit(digit);
 
     // enable digit (active-low)
